@@ -19,6 +19,10 @@ header('Content-Type: application/json; charset=utf-8');
 
 function out($data, int $status=200): never { http_response_code($status); echo json_encode($data, JSON_UNESCAPED_UNICODE); exit; }
 function body(): array { $x=json_decode(file_get_contents('php://input'), true); return is_array($x)?$x:$_POST; }
+function require_strong_password(string $password): void {
+  $key=password_policy_error($password);
+  if($key!==null)out(['error'=>'Choose a stronger password','translation_key'=>$key],422);
+}
 function require_login(): array {
   if(empty($_SESSION['user']['user_id']))out(['error'=>'Authentication required'],401);
   $s=db()->prepare('SELECT u.user_id,u.username,u.role,u.status,u.emp_id,COALESCE(e.full_name,u.username) full_name FROM users u LEFT JOIN employees e ON e.emp_id=u.emp_id WHERE u.user_id=?');
@@ -59,8 +63,10 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='register') {
   $username=trim((string)($d['username'] ?? ''));
   $password=(string)($d['password'] ?? '');
   if($full_name==='') out(['error'=>'Full name is required'],422);
-  if($username==='') out(['error'=>'Username is required'],422);
-  if(strlen($password)<8) out(['error'=>'Password must be at least 8 characters long'],422);
+  if($username==='') out(['error'=>'Username is required','translation_key'=>'usernameRequired'],422);
+  $usernameError=username_policy_error($username);
+  if($usernameError!==null)out(['error'=>'Username must be between 4 and 80 characters','translation_key'=>$usernameError],422);
+  require_strong_password($password);
   $requestedRole=trim((string)($d['role']??'Employee'));
   $roles=['Administrator','HR Officer','Department Head','Employee','Management'];
   if(!in_array($requestedRole,$roles,true)) out(['error'=>'Invalid requested role'],422);
@@ -124,7 +130,11 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
   json_input_required($d,['username','password']);
   $loginUsername=trim((string)$d['username']);
   $loginPassword=is_string($d['password'])?$d['password']:'';
-  if($loginUsername==='' || $loginPassword==='')out(['error'=>'Invalid credentials or account temporarily locked'],401);
+  if($loginUsername==='')out(['error'=>'Username cannot be empty','translation_key'=>'usernameRequired'],422);
+  $usernameError=username_policy_error($loginUsername);
+  if($usernameError!==null)out(['error'=>'Username must be at least 4 characters long','translation_key'=>$usernameError],422);
+  $passwordError=password_policy_error($loginPassword);
+  if($passwordError==='passwordTooShort')out(['error'=>'Password must be at least 6 characters long','translation_key'=>$passwordError],422);
   $s=db()->prepare("SELECT u.user_id,u.username,u.password_hash,u.role,u.status,u.emp_id,u.failed_attempts,u.locked_until,COALESCE(e.full_name,u.username) AS full_name FROM users u LEFT JOIN employees e ON e.emp_id=u.emp_id WHERE u.username=? LIMIT 1");
   $s->execute([$loginUsername]);
   $u=$s->fetch();
@@ -167,7 +177,10 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
    if(array_key_exists('username',$d)&&!is_scalar($d['username']))out(['error'=>'Username cannot be empty','translation_key'=>'usernameRequired'],422);
    $username=array_key_exists('username',$d)?trim((string)$d['username']):null;
    if($username!==null && $username==='')out(['error'=>'Username cannot be empty','translation_key'=>'usernameRequired'],422);
-   if($username!==null && strlen($username)>80)out(['error'=>'Username must be 80 characters or fewer','translation_key'=>'usernameTooLong'],422);
+   if($username!==null) {
+     $usernameError=username_policy_error($username);
+     if($usernameError!==null)out(['error'=>'Username must be between 4 and 80 characters','translation_key'=>$usernameError],422);
+   }
    $employeeFields=['full_name','phone','email','sex','birth_date'];
    $changes=[];
    foreach($employeeFields as $field) {
@@ -213,7 +226,7 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
    $currentPassword=is_string($d['current_password'])?$d['current_password']:'';
    $newPassword=is_string($d['new_password'])?$d['new_password']:'';
    $confirmPassword=is_string($d['confirm_password'])?$d['confirm_password']:'';
-   if(strlen($newPassword)<8)out(['error'=>'New password must be at least 8 characters long','translation_key'=>'passwordTooShort'],422);
+   require_strong_password($newPassword);
    if($newPassword!==$confirmPassword)out(['error'=>'New password confirmation does not match','translation_key'=>'passwordMismatch'],422);
    $s=db()->prepare('SELECT password_hash FROM users WHERE user_id=?');
    $s->execute([(int)$user['user_id']]);
@@ -265,8 +278,10 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
      json_input_required($d,['username','password','role']);
      $username=trim((string)$d['username']);
      $password=(string)$d['password'];
-     if($username==='')out(['error'=>'Username is required'],422);
-     if(strlen($password)<8)out(['error'=>'Password must be at least 8 characters long'],422);
+     if($username==='')out(['error'=>'Username is required','translation_key'=>'usernameRequired'],422);
+     $usernameError=username_policy_error($username);
+     if($usernameError!==null)out(['error'=>'Username must be between 4 and 80 characters','translation_key'=>$usernameError],422);
+     require_strong_password((string)$password);
      if(!in_array($d['role'],$roles,true))out(['error'=>'Invalid account role'],422);
      $status=$d['status']??'Active';
      if(!in_array($status,['Active','Inactive'],true))out(['error'=>'Invalid account status'],422);
@@ -285,7 +300,9 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
      $username=trim((string)($d['username']??$account['username']));
      $role=$d['role']??$account['role'];
      $status=$d['status']??$account['status'];
-     if($username==='')out(['error'=>'Username is required'],422);
+     if($username==='')out(['error'=>'Username is required','translation_key'=>'usernameRequired'],422);
+     $usernameError=username_policy_error($username);
+     if($usernameError!==null)out(['error'=>'Username must be between 4 and 80 characters','translation_key'=>$usernameError],422);
      if(!in_array($role,$roles,true))out(['error'=>'Invalid account role'],422);
      if(!in_array($status,['Active','Inactive'],true))out(['error'=>'Invalid account status'],422);
      if((int)$account['user_id']===(int)$user['user_id'] && ($status!=='Active'||$role!=='Administrator'))out(['error'=>'You cannot deactivate or demote your own administrator account'],422);
@@ -293,7 +310,7 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
      if($empId===false || ($empId!==null && (int)$empId<1))out(['error'=>'Select a valid employee'],422);
      if($empId!==null){$s=db()->prepare('SELECT 1 FROM employees WHERE emp_id=?');$s->execute([$empId]);if(!$s->fetchColumn())out(['error'=>'Employee not found'],404);}
      $password=array_key_exists('password',$d)?(string)$d['password']:'';
-     if($password!=='' && strlen($password)<8)out(['error'=>'Password must be at least 8 characters long'],422);
+     if($password!=='')require_strong_password($password);
      try {
        if($password!=='')$s=db()->prepare('UPDATE users SET username=?,role=?,status=?,emp_id=?,password_hash=? WHERE user_id=?')->execute([$username,$role,$status,$empId,password_hash($password,PASSWORD_DEFAULT),$id]);
        else $s=db()->prepare('UPDATE users SET username=?,role=?,status=?,emp_id=? WHERE user_id=?')->execute([$username,$role,$status,$empId,$id]);
@@ -382,8 +399,10 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
    $username=trim((string)$d['username']);
    $roles=['Administrator','HR Officer','Department Head','Employee','Management'];
    if($empId===false || $empId<1)out(['error'=>'Select a valid employee'],422);
-   if($username==='')out(['error'=>'Username is required'],422);
-   if(strlen((string)$d['password'])<8)out(['error'=>'Password must be at least 8 characters long'],422);
+   if($username==='')out(['error'=>'Username is required','translation_key'=>'usernameRequired'],422);
+   $usernameError=username_policy_error($username);
+   if($usernameError!==null)out(['error'=>'Username must be between 4 and 80 characters','translation_key'=>$usernameError],422);
+   require_strong_password((string)$d['password']);
    if(!in_array($d['role'],$roles,true))out(['error'=>'Invalid account role'],422);
    $employee=db()->prepare('SELECT emp_id FROM employees WHERE emp_id=?');
    $employee->execute([$empId]);
@@ -482,8 +501,10 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
        require_role(['Administrator']);
        json_input_required($d,['account_username','account_password','account_role']);
        $d['account_username']=trim((string)$d['account_username']);
-       if($d['account_username']==='')out(['error'=>'Login username is required'],422);
-       if(strlen((string)$d['account_password'])<8)out(['error'=>'Account password must be at least 8 characters long'],422);
+       if($d['account_username']==='')out(['error'=>'Login username is required','translation_key'=>'usernameRequired'],422);
+       $usernameError=username_policy_error($d['account_username']);
+       if($usernameError!==null)out(['error'=>'Username must be between 4 and 80 characters','translation_key'=>$usernameError],422);
+       require_strong_password((string)$d['account_password']);
        if(!in_array($d['account_role'],['Administrator','HR Officer','Department Head','Employee','Management'],true))out(['error'=>'Invalid account role'],422);
      }
      $collegeValue=$d['college_id']??null;

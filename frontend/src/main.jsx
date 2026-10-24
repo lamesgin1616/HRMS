@@ -27,18 +27,35 @@ class ApiError extends Error {
   }
 }
 
-function PasswordField({label,...inputProps}){
+function passwordPolicyKey(password){
+ if(password.length<6)return 'passwordTooShort';
+ if(new TextEncoder().encode(password).length>72)return 'passwordTooLong';
+ if(!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password)||!/[^A-Za-z0-9]/.test(password))return 'weakPassword';
+ if(['password123!','welcome123!','qwerty123!','admin123!','letmein123!','changeme123!','iloveyou123!'].includes(password.toLowerCase()))return 'commonPassword';
+ return null;
+}
+
+function usernamePolicyKey(username){
+ const value=username.trim();
+ if(!value)return 'usernameRequired';
+ if(value.length<4)return 'usernameTooShort';
+ if(value.length>80)return 'usernameTooLong';
+ return null;
+}
+
+function PasswordField({label,helpText,...inputProps}){
  const {t}=useTranslation();
  const id=useId();
  const [visible,setVisible]=useState(false);
  return <div className="password-field">
    <label htmlFor={id}>{label}</label>
    <span className="password-input-wrap">
-     <input {...inputProps} id={id} type={visible?'text':'password'}/>
+     <input {...inputProps} id={id} type={visible?'text':'password'} minLength={inputProps.minLength??6} maxLength={inputProps.maxLength??72} onInvalid={e=>{if(e.currentTarget.value.length<6)e.currentTarget.setCustomValidity(t('passwordTooShort'))}} onInput={e=>e.currentTarget.setCustomValidity('')}/>
      <button className="password-toggle" type="button" onClick={()=>setVisible(value=>!value)} aria-label={t(visible?'hidePassword':'showPassword')} aria-pressed={visible} title={t(visible?'hidePassword':'showPassword')}>
        {visible?<EyeOff size={17} aria-hidden="true"/>:<Eye size={17} aria-hidden="true"/>}
      </button>
    </span>
+   {helpText&&<small className="password-help">{helpText}</small>}
  </div>;
 }
 
@@ -132,8 +149,8 @@ function App(){
  useEffect(()=>{if(!signup||!regForm.college_id){setDepartments([]);return}let cancelled=false;request(`departments?college_id=${encodeURIComponent(regForm.college_id)}`).then(x=>{if(!cancelled)setDepartments(x||[])}).catch(e=>{if(!cancelled)setError(e.message)});return()=>{cancelled=true}},[signup,regForm.college_id]);
  useEffect(()=>{if(user)loadPage(page)},[user,page]);
  async function loadPage(p){if(p==='Profile settings'){setError('');return}setLoading(true);setError('');try{if(p==='Dashboard'){const r=await request('dashboard');setCounts(r.counts);setData([])}else{let endpoint=p.toLowerCase();if(p==='Leave requests')endpoint='leave';if(p==='Role requests')endpoint='role-requests';if(p==='Profile requests')endpoint='profile-requests';if(p==='User accounts')endpoint='users';if(p==='Reports'){setData([await request('reports')]);}else{const r=await request(endpoint+(p==='Vacancies'&&user.role==='Employee'?'/public':'' )+(p==='Employees'&&search?'?q='+encodeURIComponent(search):''));setData(Array.isArray(r)?r:(r?[r]:[]));}}}catch(e){setError(e.message);setData([])}finally{setLoading(false)}}
- async function login(e){e.preventDefault();setError('');try{const r=await request('auth/login',{method:'POST',body:JSON.stringify({username,password})});setUser(r.user);setPage('Dashboard')}catch(e){setError(e.status===401?t('invalid_credentials'):e.message)}}
- async function registerEmployee(e){e.preventDefault();setError('');try{const result=await request('auth/register',{method:'POST',body:JSON.stringify(regForm)});setRegForm({full_name:'',username:'',password:'',role:'Employee',sex:'',birth_date:'',email:'',phone:'',position:'',college_id:'',department_id:'',staff_no:''});navigatePublic('login');setError(result.message);}catch(e){setError(e.status===409?t('user_already_exists'):e.message)}}
+ async function login(e){e.preventDefault();setError('');const usernameError=usernamePolicyKey(username);if(usernameError){setError(t(usernameError));return}if(password.length<6){setError(t('passwordTooShort'));return}try{const r=await request('auth/login',{method:'POST',body:JSON.stringify({username,password})});setUser(r.user);setPage('Dashboard')}catch(e){setError(e.status===401?t('invalid_credentials'):e.message)}}
+ async function registerEmployee(e){e.preventDefault();setError('');const usernameError=usernamePolicyKey(regForm.username);if(usernameError){setError(t(usernameError));return}const passwordError=passwordPolicyKey(regForm.password);if(passwordError){setError(t(passwordError));return}try{const result=await request('auth/register',{method:'POST',body:JSON.stringify(regForm)});setRegForm({full_name:'',username:'',password:'',role:'Employee',sex:'',birth_date:'',email:'',phone:'',position:'',college_id:'',department_id:'',staff_no:''});navigatePublic('login');setError(result.message);}catch(e){setError(e.status===409?t('user_already_exists'):e.message)}}
  async function logout(){try{await request('auth/logout',{method:'POST',body:'{}'})}finally{setUser(null);setPassword('');navigatePublic('home')}}
  if(!user)return (
    <div className="public-site" lang={i18n.resolvedLanguage||i18n.language}>
@@ -146,8 +163,8 @@ function App(){
        <h1>{t('newEmployeeAccount')}</h1><p className="muted">{t('createStaffLogin')}</p>
        {error&&<div className="alert" role="alert">{error}</div>}
        <label>{t('fullName')}<input value={regForm.full_name} onChange={e=>setRegForm({...regForm,full_name:e.target.value})} required/></label>
-       <label>{t('username')}<input value={regForm.username} onChange={e=>setRegForm({...regForm,username:e.target.value})} required/></label>
-       <PasswordField label={t('password')} value={regForm.password} onChange={e=>setRegForm({...regForm,password:e.target.value})} minLength="8" required/>
+       <label>{t('username')}<input value={regForm.username} onChange={e=>setRegForm({...regForm,username:e.target.value})} minLength="4" maxLength="80" onInvalid={e=>{if(e.currentTarget.value.length<4)e.currentTarget.setCustomValidity(t(e.currentTarget.value.length?'usernameTooShort':'usernameRequired'))}} onInput={e=>e.currentTarget.setCustomValidity('')} required/></label>
+       <PasswordField label={t('password')} helpText={t('passwordRequirementsHint')} value={regForm.password} onChange={e=>setRegForm({...regForm,password:e.target.value})} maxLength="72" required/>
        <label>{t('sex')}<select value={regForm.sex} onChange={e=>setRegForm({...regForm,sex:e.target.value})}>
          <option value="">{t('select')}</option>
          {['Male','Female','Other'].map(sex=><option key={sex} value={sex}>{t(sex.toLowerCase())}</option>)}
@@ -171,7 +188,7 @@ function App(){
        <div className="login-brand"><img className="university-logo university-logo--login" src={mauLogo} alt={t('institutionName')} /><p className="eyebrow">{t('universityName')}</p></div>
        <h1>{t('hrmsTitle')}</h1><p className="muted">{t('signInDescription')}</p>
        {error&&<div className="alert" role="alert">{error}</div>}
-       <label>{t('username')}<input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" required/></label>
+       <label>{t('username')}<input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="username" minLength="4" maxLength="80" onInvalid={e=>{if(e.currentTarget.value.length<4)e.currentTarget.setCustomValidity(t(e.currentTarget.value.length?'usernameTooShort':'usernameRequired'))}} onInput={e=>e.currentTarget.setCustomValidity('')} required/></label>
        <PasswordField label={t('password')} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" required/>
        <button className="primary full" type="submit">{t('signIn')}</button>
        <button className="secondary full" type="button" onClick={()=>navigatePublic('register')}>{t('createAccount')}</button>
@@ -197,7 +214,10 @@ function ProfileSettings({refreshToken,onProfileUpdated}){
    return()=>{cancelled=true};
  },[refreshToken]);
  async function saveProfile(e){
-   e.preventDefault();setProfileError('');setProfileSuccess('');setProfileBusy(true);
+   e.preventDefault();setProfileError('');setProfileSuccess('');
+   const usernameError=usernamePolicyKey(profile.username||'');
+   if(usernameError){setProfileError(t(usernameError));return}
+   setProfileBusy(true);
    try{
      const updated=await request('profile',{method:'PATCH',body:JSON.stringify(profile)});
      setProfile(updated);onProfileUpdated(updated);setProfileSuccess(t('profileUpdated'));
@@ -205,6 +225,8 @@ function ProfileSettings({refreshToken,onProfileUpdated}){
  }
  async function changePassword(e){
    e.preventDefault();setPasswordError('');setPasswordSuccess('');
+   const passwordErrorKey=passwordPolicyKey(passwordForm.new_password);
+   if(passwordErrorKey){setPasswordError(t(passwordErrorKey));return}
    if(passwordForm.new_password!==passwordForm.confirm_password){setPasswordError(t('passwordMismatch'));return}
    setPasswordBusy(true);
    try{
@@ -220,7 +242,7 @@ function ProfileSettings({refreshToken,onProfileUpdated}){
      {profileError&&<div className="alert" role="alert">{profileError}</div>}
      {profileSuccess&&<div className="alert alert-success" role="status">{profileSuccess}</div>}
      <form className="profile-form" onSubmit={saveProfile}>
-       <label>{t('username')}<input value={profile.username||''} onChange={e=>setProfile({...profile,username:e.target.value})} maxLength="80" required/></label>
+       <label>{t('username')}<input value={profile.username||''} onChange={e=>setProfile({...profile,username:e.target.value})} minLength="4" maxLength="80" onInvalid={e=>{if(e.currentTarget.value.length<4)e.currentTarget.setCustomValidity(t(e.currentTarget.value.length?'usernameTooShort':'usernameRequired'))}} onInput={e=>e.currentTarget.setCustomValidity('')} required/></label>
        {profile.emp_id&&<>
          <label>{t('fullName')}<input value={profile.full_name||''} onChange={e=>setProfile({...profile,full_name:e.target.value})} maxLength="160" required/></label>
          <label>{t('phone')}<input type="tel" value={profile.phone||''} onChange={e=>setProfile({...profile,phone:e.target.value})} maxLength="40"/></label>
@@ -240,8 +262,8 @@ function ProfileSettings({refreshToken,onProfileUpdated}){
      {passwordSuccess&&<div className="alert alert-success" role="status">{passwordSuccess}</div>}
      <form className="profile-form" onSubmit={changePassword}>
        <PasswordField label={t('currentPassword')} autoComplete="current-password" value={passwordForm.current_password} onChange={e=>setPasswordForm({...passwordForm,current_password:e.target.value})} required/>
-       <PasswordField label={t('newPassword')} autoComplete="new-password" minLength="8" value={passwordForm.new_password} onChange={e=>setPasswordForm({...passwordForm,new_password:e.target.value})} required/>
-       <PasswordField label={t('confirmNewPassword')} autoComplete="new-password" minLength="8" value={passwordForm.confirm_password} onChange={e=>setPasswordForm({...passwordForm,confirm_password:e.target.value})} required/>
+       <PasswordField label={t('newPassword')} helpText={t('passwordRequirementsHint')} autoComplete="new-password" maxLength="72" value={passwordForm.new_password} onChange={e=>setPasswordForm({...passwordForm,new_password:e.target.value})} required/>
+       <PasswordField label={t('confirmNewPassword')} autoComplete="new-password" maxLength="72" value={passwordForm.confirm_password} onChange={e=>setPasswordForm({...passwordForm,confirm_password:e.target.value})} required/>
        <div className="profile-form__actions"><button className="primary" type="submit" disabled={passwordBusy}>{passwordBusy?t('saving'):t('updatePassword')}</button></div>
      </form>
    </section>
@@ -260,8 +282,8 @@ function DataPage({page,rows,user,loading,search,setSearch,refresh,setError}){
  const createLabel=page==='User accounts'?t('createAccountRecord'):page==='Profile requests'?t('sendRequest'):t(`add${page==='Leave requests'?'Request':page==='Employees'?'Employee':page==='Vacancies'?'Vacancy':page==='Departments'?'Department':page==='Colleges'?'College':page==='Attendance'?'Record':page==='Payroll'?'Payroll':'Evaluation'}`);
  const endpoint=page==='Leave requests'?'leave':page==='Role requests'?'role-requests':page==='Profile requests'?'profile-requests':page==='User accounts'?'users':page.toLowerCase();
  const columns=rows.length&&rows[0]&&!Array.isArray(rows[0])?Object.keys(rows[0]).filter(k=>!['password_hash','cv_path','head_comment','hr_comment','created_by','created_at','updated_at','user_id','request_id','not_id','is_read','reviewed_by','reviewed_at','changes_json'].includes(k)).slice(0,7):[];
- async function submit(e){e.preventDefault();setBusy(true);setError('');try{let payload={...form};if(page==='Vacancies'&&!payload.status)payload.status='Draft';if(page==='Profile requests'&&!editingId&&!Object.values(payload).some(value=>String(value??'').trim()!==''))throw new Error(t('profileRequestRequired'));if(page==='User accounts'&&!editingId&&!payload.password)throw new Error(t('passwordRequired'));if(page==='Employees'){const hasUsername=Boolean(payload.account_username?.trim()),hasPassword=Boolean(payload.account_password);if(hasUsername!==hasPassword)throw new Error(t('enterLoginCredentials'));if(!hasUsername){delete payload.account_username;delete payload.account_password;delete payload.account_role;}else if(payload.account_password.length<8)throw new Error(t('passwordLengthError'));}if(page==='Profile requests')payload={changes:payload};if(editingId&&page==='User accounts'&&!payload.password)delete payload.password;const method=editingId?(page==='User accounts'?'PATCH':'PUT'):'POST';await request(`${endpoint}${editingId?`/${editingId}`:''}`,{method,body:JSON.stringify(payload)});setForm({});setShowForm(false);setEditingId(null);await refresh();if(page==='Profile requests'&&!editingId)setError(t('employeeRequestSubmitted'))}catch(e){setError(e.message)}finally{setBusy(false)}}
- async function submitLinkedAccount(e){e.preventDefault();setLinkBusy(true);setError('');try{await request('employee-accounts',{method:'POST',body:JSON.stringify(linkForm)});setLinkForm({emp_id:'',username:'',password:'',role:'Employee'});setShowLinkForm(false);setError(t('accountCreated'));refresh()}catch(e){setError(e.message)}finally{setLinkBusy(false)}}
+ async function submit(e){e.preventDefault();setError('');try{let payload={...form};if(page==='User accounts'){const usernameError=usernamePolicyKey(payload.username||'');if(usernameError)throw new Error(t(usernameError))}if(page==='Vacancies'&&!payload.status)payload.status='Draft';if(page==='Profile requests'&&!editingId&&!Object.values(payload).some(value=>String(value??'').trim()!==''))throw new Error(t('profileRequestRequired'));if(page==='User accounts'&&!editingId&&!payload.password)throw new Error(t('passwordRequired'));if(page==='User accounts'&&payload.password){const passwordError=passwordPolicyKey(payload.password);if(passwordError)throw new Error(t(passwordError))}if(page==='Employees'){const hasUsername=Boolean(payload.account_username?.trim()),hasPassword=Boolean(payload.account_password);if(hasUsername!==hasPassword)throw new Error(t('enterLoginCredentials'));if(!hasUsername){delete payload.account_username;delete payload.account_password;delete payload.account_role;}else{const usernameError=usernamePolicyKey(payload.account_username);if(usernameError)throw new Error(t(usernameError));const passwordError=passwordPolicyKey(payload.account_password);if(passwordError)throw new Error(t(passwordError));}}if(page==='Profile requests')payload={changes:payload};if(editingId&&page==='User accounts'&&!payload.password)delete payload.password;setBusy(true);const method=editingId?(page==='User accounts'?'PATCH':'PUT'):'POST';await request(`${endpoint}${editingId?`/${editingId}`:''}`,{method,body:JSON.stringify(payload)});setForm({});setShowForm(false);setEditingId(null);await refresh();if(page==='Profile requests'&&!editingId)setError(t('employeeRequestSubmitted'))}catch(e){setError(e.message)}finally{setBusy(false)}}
+ async function submitLinkedAccount(e){e.preventDefault();setError('');const usernameError=usernamePolicyKey(linkForm.username);if(usernameError){setError(t(usernameError));return}const passwordError=passwordPolicyKey(linkForm.password);if(passwordError){setError(t(passwordError));return}setLinkBusy(true);try{await request('employee-accounts',{method:'POST',body:JSON.stringify(linkForm)});setLinkForm({emp_id:'',username:'',password:'',role:'Employee'});setShowLinkForm(false);setError(t('accountCreated'));refresh()}catch(e){setError(e.message)}finally{setLinkBusy(false)}}
  async function decision(id,decision){const comment=prompt(t('optionalComment'))||'';try{await request(`leave/${id}`,{method:'PATCH',body:JSON.stringify({decision,comment})});refresh()}catch(e){setError(e.message)}}
  async function updateStatus(id,status){try{await request(`vacancies/${id}`,{method:'PATCH',body:JSON.stringify({status})});refresh()}catch(e){setError(e.message)}}
  async function reviewRoleRequest(id,decision){try{await request(`role-requests/${id}`,{method:'PATCH',body:JSON.stringify({decision})});refresh()}catch(e){setError(e.message)}}
@@ -281,16 +303,16 @@ function DataPage({page,rows,user,loading,search,setSearch,refresh,setError}){
    const isRequired=!!required&&!editingId;
    const value=form[key]||'';
    const onChange=e=>setForm({...form,[key]:e.target.value});
-   if(type==='password')return <PasswordField key={key} label={title} minLength="8" required={isRequired} value={value} onChange={onChange}/>;
+   if(type==='password')return <PasswordField key={key} label={title} helpText={t('passwordRequirementsHint')} minLength="6" maxLength="72" required={isRequired} value={value} onChange={onChange}/>;
    if(type==='college')return <label key={key}>{title}<select required={!!required||Boolean(page==='Profile requests'&&form.college_id)} value={form.college_id||''} onChange={e=>setForm({...form,college_id:e.target.value,department_id:''})}><option value="">{t('selectCollege')}</option>{collegeOptions.map(college=><option key={college.college_id} value={college.college_id}>{college.name}</option>)}</select></label>;
    if(type==='department')return <label key={key}>{title}<select required={!!required||Boolean(page==='Profile requests'&&form.college_id)} disabled={!form.college_id} value={form.department_id||''} onChange={e=>setForm({...form,department_id:e.target.value})}><option value="">{t('selectDepartment')}</option>{departmentOptions.map(department=><option key={department.department_id} value={department.department_id}>{department.name}</option>)}</select></label>;
    if(type==='employee')return <label key={key}>{title}<select value={form.emp_id||''} onChange={e=>setForm({...form,emp_id:e.target.value})}><option value="">{t('selectEmployeeOptional')}</option>{staffOptions.map(employee=><option key={employee.emp_id} value={employee.emp_id}>{employee.staff_no||`Employee #${employee.emp_id}`} — {employee.full_name}</option>)}</select></label>;
    if(type==='textarea')return <label key={key}>{title}<textarea required={isRequired} value={value} onChange={onChange}/></label>;
    if(type==='select')return <label key={key}>{title}<select required={isRequired} value={value} onChange={onChange}><option value="">{t('select')}</option>{opts.map(option=><option key={option} value={option}>{t(optionTextKeys[option]||option)}</option>)}</select></label>;
-   return <label key={key}>{title}<input type={type} required={isRequired} min={type==='number'?0:undefined} value={value} onChange={onChange}/></label>;
+   return <label key={key}>{title}<input type={type} required={isRequired} min={type==='number'?0:undefined} minLength={key==='username'||key==='account_username'?4:undefined} maxLength={key==='username'||key==='account_username'?80:undefined} onInvalid={e=>{if((key==='username'||key==='account_username')&&e.currentTarget.value.length>0&&e.currentTarget.value.length<4)e.currentTarget.setCustomValidity(t('usernameTooShort'))}} onInput={e=>e.currentTarget.setCustomValidity('')} value={value} onChange={onChange}/></label>;
  }
  return <div className="panel"><div className="panel-heading"><div><h3>{t(textKeys[page])||page}</h3><p>{page==='Profile requests'&&user.role==='Employee'?t('profileRequestDescription'):t('recordsByRole')}</p></div><div className="table-actions">{page==='Employees'&&<><input className="search" placeholder={t('searchEmployees')} value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&refresh()}/ ><select aria-label={t('filterStaffNumber')} value={staffFilter} onChange={e=>setStaffFilter(e.target.value)}><option value="">{t('allStaffNumbers')}</option>{rows.map(employee=><option key={employee.emp_id} value={employee.emp_id}>{employee.staff_no||`Employee #${employee.emp_id}`}</option>)}</select></>}{page==='Employees'&&user.role==='Administrator'&&<button className="secondary" onClick={()=>{setShowLinkForm(!showLinkForm);setShowForm(false);setEditingId(null)}}>{showLinkForm?t('cancel'):t('createLoginAccount')}</button>}{canCreate&&<button className="primary" onClick={()=>{if(showForm){setShowForm(false);setEditingId(null);setForm({})}else{setShowForm(true);setEditingId(null);setForm({})}setShowLinkForm(false)}}>{showForm?t('cancel'):editingId?t('edit'):createLabel}</button>}</div></div>
- {showLinkForm&&page==='Employees'&&user.role==='Administrator'&&<form className="record-form" onSubmit={submitLinkedAccount}><label>{t('staffNumber')}<select value={linkForm.emp_id} onChange={e=>setLinkForm({...linkForm,emp_id:e.target.value})} required><option value="">{t('selectStaffMember')}</option>{rows.map(employee=><option key={employee.emp_id} value={employee.emp_id}>{employee.staff_no||`Employee #${employee.emp_id}`} — {employee.full_name}</option>)}</select></label><label>{t('loginUsername')}<input value={linkForm.username} onChange={e=>setLinkForm({...linkForm,username:e.target.value})} required/></label><PasswordField label={t('initialPassword')} minLength="8" value={linkForm.password} onChange={e=>setLinkForm({...linkForm,password:e.target.value})} required/><label>{t('accountRole')}<select value={linkForm.role} onChange={e=>setLinkForm({...linkForm,role:e.target.value})} required>{['Administrator','HR Officer','Department Head','Employee','Management'].map(role=><option key={role} value={role}>{t(optionTextKeys[role])}</option>)}</select></label><div className="form-footer"><button className="primary" disabled={linkBusy||!rows.length}>{linkBusy?t('creatingAccount'):t('createLoginAccount')}</button></div></form>}
+ {showLinkForm&&page==='Employees'&&user.role==='Administrator'&&<form className="record-form" onSubmit={submitLinkedAccount}><label>{t('staffNumber')}<select value={linkForm.emp_id} onChange={e=>setLinkForm({...linkForm,emp_id:e.target.value})} required><option value="">{t('selectStaffMember')}</option>{rows.map(employee=><option key={employee.emp_id} value={employee.emp_id}>{employee.staff_no||`Employee #${employee.emp_id}`} — {employee.full_name}</option>)}</select></label><label>{t('loginUsername')}<input value={linkForm.username} onChange={e=>setLinkForm({...linkForm,username:e.target.value})} minLength="4" maxLength="80" onInvalid={e=>{if(e.currentTarget.value.length>0&&e.currentTarget.value.length<4)e.currentTarget.setCustomValidity(t('usernameTooShort'))}} onInput={e=>e.currentTarget.setCustomValidity('')} required/></label><PasswordField label={t('initialPassword')} helpText={t('passwordRequirementsHint')} minLength="6" maxLength="72" value={linkForm.password} onChange={e=>setLinkForm({...linkForm,password:e.target.value})} required/><label>{t('accountRole')}<select value={linkForm.role} onChange={e=>setLinkForm({...linkForm,role:e.target.value})} required>{['Administrator','HR Officer','Department Head','Employee','Management'].map(role=><option key={role} value={role}>{t(optionTextKeys[role])}</option>)}</select></label><div className="form-footer"><button className="primary" disabled={linkBusy||!rows.length}>{linkBusy?t('creatingAccount'):t('createLoginAccount')}</button></div></form>}
  {showForm&&<form className="record-form" onSubmit={submit}>
    {(definitions[page]||[]).filter(([key])=>key.startsWith('account_')?user.role==='Administrator'&&!editingId:true).map(renderFormField)}
    {page==='Employees'&&user.role==='Administrator'&&!editingId&&<p className="small muted">{t('optionalLoginNotice')}</p>}

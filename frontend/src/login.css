@@ -188,6 +188,13 @@
   font-weight: 700;
 }
 
+.password-help {
+  color: #78869a;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
 .password-input-wrap {
   position: relative;
   display: block;
