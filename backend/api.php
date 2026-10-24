@@ -64,6 +64,11 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='register') {
   $requestedRole=trim((string)($d['role']??'Employee'));
   $roles=['Administrator','HR Officer','Department Head','Employee','Management'];
   if(!in_array($requestedRole,$roles,true)) out(['error'=>'Invalid requested role'],422);
+  $sex=isset($d['sex']) && trim((string)$d['sex'])!=='' ? trim((string)$d['sex']) : null;
+  if($sex!==null && !in_array($sex,['Male','Female','Other'],true))out(['error'=>'Sex must be Male, Female, or Other'],422);
+  $birthDate=isset($d['birth_date']) ? trim((string)$d['birth_date']) : '';
+  if($birthDate!=='' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$birthDate) || !checkdate((int)substr($birthDate,5,2),(int)substr($birthDate,8,2),(int)substr($birthDate,0,4))))out(['error'=>'Birth date must be a valid date in YYYY-MM-DD format'],422);
+  if($birthDate==='')$birthDate=null;
   $collegeValue=$d['college_id']??'';
   $departmentValue=$d['department_id']??($d['dept_id']??'');
   $collegeId=null;
@@ -86,8 +91,8 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='register') {
     $empStmt->execute([
       $staffNo!=='' ? $staffNo : null,
       $full_name,
-      $d['sex'] ?? null,
-      $d['birth_date'] ?? null,
+      $sex,
+      $birthDate,
       isset($d['phone']) && trim((string)$d['phone'])!=='' ? trim((string)$d['phone']) : null,
       isset($d['email']) && trim((string)$d['email'])!=='' ? trim((string)$d['email']) : null,
       isset($d['position']) && trim((string)$d['position'])!=='' ? trim((string)$d['position']) : null,
@@ -151,6 +156,74 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
  if($resource==='auth' && ($parts[1]??'')==='me' && $method==='GET') { if(empty($_SESSION['user']))out(['user'=>null]);out(['user'=>require_login()]); }
  if($resource==='auth' && ($parts[1]??'')==='logout' && $method==='POST') { if(isset($_SESSION['user']['user_id'])){$s=db()->prepare('SELECT 1 FROM users WHERE user_id=?');$s->execute([(int)$_SESSION['user']['user_id']]);if($s->fetchColumn())log_action('LOGOUT');} $_SESSION=[]; session_destroy(); out(['ok'=>true]); }
  $user=require_login();
+ if($resource==='profile' && $method==='GET') {
+   $s=db()->prepare('SELECT u.user_id,u.username,u.emp_id,COALESCE(e.full_name,u.username) AS full_name,e.phone,e.email,e.sex,e.birth_date,e.position FROM users u LEFT JOIN employees e ON e.emp_id=u.emp_id WHERE u.user_id=?');
+   $s->execute([(int)$user['user_id']]);
+   $profile=$s->fetch();
+   if(!$profile)out(['error'=>'User account not found'],404);
+   out($profile);
+ }
+ if($resource==='profile' && $method==='PATCH') {
+   if(array_key_exists('username',$d)&&!is_scalar($d['username']))out(['error'=>'Username cannot be empty','translation_key'=>'usernameRequired'],422);
+   $username=array_key_exists('username',$d)?trim((string)$d['username']):null;
+   if($username!==null && $username==='')out(['error'=>'Username cannot be empty','translation_key'=>'usernameRequired'],422);
+   if($username!==null && strlen($username)>80)out(['error'=>'Username must be 80 characters or fewer','translation_key'=>'usernameTooLong'],422);
+   $employeeFields=['full_name','phone','email','sex','birth_date'];
+   $changes=[];
+   foreach($employeeFields as $field) {
+     if(!array_key_exists($field,$d))continue;
+     if(!is_scalar($d[$field]) && $d[$field]!==null)out(['error'=>"Invalid profile value: $field"],422);
+     $value=trim((string)($d[$field]??''));
+     if($field==='full_name') {
+       if($value==='')out(['error'=>'Full name cannot be empty','translation_key'=>'fullNameRequired'],422);
+       if(strlen($value)>160)out(['error'=>'Full name must be 160 characters or fewer','translation_key'=>'fullNameTooLong'],422);
+     } elseif($field==='phone' && strlen($value)>40)out(['error'=>'Phone number must be 40 characters or fewer','translation_key'=>'phoneTooLong'],422);
+     elseif($field==='email' && $value!=='' && (!filter_var($value,FILTER_VALIDATE_EMAIL)||strlen($value)>160))out(['error'=>'Enter a valid email address','translation_key'=>'invalidEmail'],422);
+     elseif($field==='sex' && $value!=='' && !in_array($value,['Male','Female','Other'],true))out(['error'=>'Sex must be Male, Female, or Other','translation_key'=>'invalidSex'],422);
+     elseif($field==='birth_date' && $value!=='' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$value)||!checkdate((int)substr($value,5,2),(int)substr($value,8,2),(int)substr($value,0,4))))out(['error'=>'Birth date must be a valid date in YYYY-MM-DD format','translation_key'=>'invalidBirthDate'],422);
+     $changes[$field]=in_array($field,['phone','email','sex','birth_date'],true)&&$value===''?null:$value;
+   }
+   if($username===null && !$changes)out(['error'=>'Provide at least one profile field to update','translation_key'=>'profileFieldRequired'],422);
+   if($changes && empty($user['emp_id']))out(['error'=>'This account is not linked to an employee','translation_key'=>'employeeNotLinked'],422);
+   $pdo=db();
+   $pdo->beginTransaction();
+   try {
+     if($username!==null)$pdo->prepare('UPDATE users SET username=? WHERE user_id=?')->execute([$username,(int)$user['user_id']]);
+     if($changes) {
+       $sets=[];$values=[];
+       foreach($changes as $field=>$value){$sets[]="`$field`=?";$values[]=$value;}
+       $values[]=(int)$user['emp_id'];
+       $pdo->prepare('UPDATE employees SET '.implode(',',$sets).' WHERE emp_id=?')->execute($values);
+     }
+     $pdo->commit();
+   } catch(Throwable $e) {
+     if($pdo->inTransaction())$pdo->rollBack();
+     if($e instanceof PDOException && (string)$e->getCode()==='23000')out(['error'=>'Username already exists','translation_key'=>'user_already_exists'],409);
+     throw $e;
+   }
+   if($username!==null)$_SESSION['user']['username']=$username;
+   if(isset($changes['full_name']))$_SESSION['user']['full_name']=$changes['full_name'];
+   log_action('UPDATE_PROFILE');
+   $s=$pdo->prepare('SELECT u.user_id,u.username,u.emp_id,COALESCE(e.full_name,u.username) AS full_name,e.phone,e.email,e.sex,e.birth_date,e.position FROM users u LEFT JOIN employees e ON e.emp_id=u.emp_id WHERE u.user_id=?');
+   $s->execute([(int)$user['user_id']]);
+   out($s->fetch());
+ }
+ if($resource==='change-password' && $method==='POST') {
+   json_input_required($d,['current_password','new_password','confirm_password']);
+   $currentPassword=is_string($d['current_password'])?$d['current_password']:'';
+   $newPassword=is_string($d['new_password'])?$d['new_password']:'';
+   $confirmPassword=is_string($d['confirm_password'])?$d['confirm_password']:'';
+   if(strlen($newPassword)<8)out(['error'=>'New password must be at least 8 characters long','translation_key'=>'passwordTooShort'],422);
+   if($newPassword!==$confirmPassword)out(['error'=>'New password confirmation does not match','translation_key'=>'passwordMismatch'],422);
+   $s=db()->prepare('SELECT password_hash FROM users WHERE user_id=?');
+   $s->execute([(int)$user['user_id']]);
+   $passwordHash=$s->fetchColumn();
+   if(!$passwordHash||!password_verify($currentPassword,$passwordHash))out(['error'=>'Current password is incorrect','translation_key'=>'currentPasswordIncorrect'],422);
+   db()->prepare('UPDATE users SET password_hash=?,failed_attempts=0,locked_until=NULL WHERE user_id=?')->execute([password_hash($newPassword,PASSWORD_DEFAULT),(int)$user['user_id']]);
+   log_action('CHANGE_PASSWORD');
+   session_regenerate_id(true);
+   out(['ok'=>true]);
+ }
  if($resource==='colleges') {
    require_role(['Administrator']);
    if($method==='POST') {
