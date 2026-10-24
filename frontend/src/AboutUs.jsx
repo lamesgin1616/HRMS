@@ -20,7 +20,6 @@ export default function AboutUs() {
         <address>
           <strong>{t('contactLabel')}</strong>
           <span>{t('campusAddress')}</span>
-          <span>{t('poBox')}</span>
           <a href={`mailto:${t('contactEmail')}`}>{t('contactEmail')}</a>
         </address>
       </section>

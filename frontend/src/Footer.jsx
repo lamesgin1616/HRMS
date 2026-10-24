@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import mauLogo from './assets/mau-logo.jpg';
 import './footer.css';
 
-const campusMapUrl = 'https://www.google.com/maps/search/?api=1&query=Mekdela+Amba+University+Tulu+Awulia+Mota+campus';
+const campusMapUrl = 'https://www.google.com/maps/search/?api=1&query=Mekdela+Amba+University+Tulu+Awulia+Main+Campus';
 
 export default function Footer() {
   const { t } = useTranslation();
@@ -23,12 +23,6 @@ export default function Footer() {
           <div>
             <strong>{t('addressLabel')}</strong>
             <span>{t('campusAddress')}</span>
-          </div>
-        </div>
-        <div className="contact-footer__item">
-          <div>
-            <strong>{t('poBoxLabel')}</strong>
-            <span>{t('poBox')}</span>
           </div>
         </div>
         <div className="contact-footer__item">
