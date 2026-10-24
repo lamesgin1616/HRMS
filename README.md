@@ -34,7 +34,8 @@ MAU-HRMS/
 │   ├── package.json
 │   └── vite.config.js
 ├── sql/
-│   └── hrms.sql
+│   ├── mau_hrms.sql
+│   └── employee_admin_workflow_migration.sql
 ├── README.md
 ├── start-dev.bat
 └── ...
@@ -65,7 +66,7 @@ http://localhost/phpmyadmin
 Then import:
 
 ```text
-sql/hrms.sql
+sql/mau_hrms.sql
 ```
 
 This creates the `mau_hrms` database and the initial HR-related tables.
@@ -95,9 +96,7 @@ CLI-created administrators are standalone user records and do not require an emp
 
 Public self-registration lets applicants request Administrator, HR Officer, Department Head, Employee, or Management. Every new account is created with the Employee role; requests for other roles remain pending until an Administrator approves them from the **Role requests** menu. Administrators can also assign roles when adding an employee from the **Employees** menu.
 
-Employee registration uses cascading College and Department dropdowns. Departments are fetched only after a college is selected, and the employee record stores both IDs. New databases get the college and department tables and seed data from `sql/hrms.sql`. To upgrade an existing database, run `sql/college_department_migration.sql` once in phpMyAdmin. To reapply only the department seed after that migration, run `sql/seed_mau_departments.sql`; it uses `INSERT IGNORE` and is safe to run repeatedly.
-
-For an existing database, apply `sql/role_requests_migration.sql` once in phpMyAdmin after selecting the `mau_hrms` database. New installations get the role request table when importing `sql/hrms.sql`.
+Employee registration uses cascading College and Department dropdowns. Departments are fetched only after a college is selected, and the employee record stores both IDs. New databases get the college, department, role request, and profile request tables and seed data from `sql/mau_hrms.sql`. The administrator CRUD and employee profile-request workflow requires `sql/employee_admin_workflow_migration.sql` on an existing database; run it once in phpMyAdmin with `mau_hrms` selected.
 
 ## Run the application
 
@@ -150,7 +149,15 @@ The backend exposes endpoints for:
 - `GET /colleges` and `GET /departments?college_id={id}` for registration dropdowns
 - Authentication: login, logout, current user
 - Dashboard
-- Employees and departments
+- Administrator CRUD for employees, colleges, departments, and user accounts
+- Employee profile requests and administrator/HR approval
+- Role requests and notifications
+- Employees and departments: `GET/POST /employees`, `PUT/DELETE /employees/{id}`
+- Colleges: `GET/POST /colleges`, `PUT/DELETE /colleges/{id}` (Administrator only)
+- Departments: `GET/POST /departments`, `PUT/DELETE /departments/{id}`
+- User accounts: `GET/POST /users`, `PATCH/DELETE /users/{id}` (Administrator only)
+- Profile requests: employee `POST /profile-requests`, approver `GET /profile-requests` and `PATCH /profile-requests/{id}`
+- Role requests: Administrator `GET /role-requests` and `PATCH /role-requests/{id}`
 - Vacancies and applications
 - Leave management
 - Attendance management

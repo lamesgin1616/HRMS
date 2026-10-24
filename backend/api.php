@@ -149,7 +149,7 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
   out(['user'=>$_SESSION['user']]);
 }
  if($resource==='auth' && ($parts[1]??'')==='me' && $method==='GET') { if(empty($_SESSION['user']))out(['user'=>null]);out(['user'=>require_login()]); }
- if($resource==='auth' && ($parts[1]??'')==='logout' && $method==='POST') { if(isset($_SESSION['user'])) log_action('LOGOUT'); $_SESSION=[]; session_destroy(); out(['ok'=>true]); }
+ if($resource==='auth' && ($parts[1]??'')==='logout' && $method==='POST') { if(isset($_SESSION['user']['user_id'])){$s=db()->prepare('SELECT 1 FROM users WHERE user_id=?');$s->execute([(int)$_SESSION['user']['user_id']]);if($s->fetchColumn())log_action('LOGOUT');} $_SESSION=[]; session_destroy(); out(['ok'=>true]); }
  $user=require_login();
  if($resource==='colleges') {
    require_role(['Administrator']);
@@ -255,7 +255,9 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
      $allowed=['full_name','phone','email','position','college_id','department_id'];
      $changes=array_intersect_key($changes,array_flip($allowed));
      if(!$changes)out(['error'=>'No supported profile fields were provided'],422);
+     foreach($changes as $key=>$value){if(!is_scalar($value))out(['error'=>"Invalid profile value: $key"],422);$changes[$key]=is_string($value)?trim($value):$value;}
      if(isset($changes['full_name'])&&trim((string)$changes['full_name'])==='')out(['error'=>'Full name cannot be empty'],422);
+     if(isset($changes['email'])&&$changes['email']!==''&&!filter_var($changes['email'],FILTER_VALIDATE_EMAIL))out(['error'=>'Enter a valid email address'],422);
      if(isset($changes['college_id'])||isset($changes['department_id'])) {
        $collegeId=filter_var($changes['college_id']??false,FILTER_VALIDATE_INT);
        $deptId=filter_var($changes['department_id']??false,FILTER_VALIDATE_INT);
@@ -360,14 +362,15 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
    require_role(['Administrator','HR Officer']);
    if($method==='POST'){
      json_input_required($d,['name','college_id']);
+     $name=trim((string)$d['name']);if($name==='')out(['error'=>'Department name is required'],422);
      $collegeId=filter_var($d['college_id'],FILTER_VALIDATE_INT);
      if($collegeId===false || $collegeId<1)out(['error'=>'Select a valid college'],422);
      $college=db()->prepare('SELECT 1 FROM colleges WHERE college_id=?');
      $college->execute([$collegeId]);
      if(!$college->fetchColumn())out(['error'=>'College not found'],404);
      $s=db()->prepare('INSERT INTO departments(name,college_id) VALUES(?,?)');
-     $s->execute([trim($d['name']),$collegeId]);
-     log_action('CREATE_DEPARTMENT',$d['name']);
+     $s->execute([$name,$collegeId]);
+     log_action('CREATE_DEPARTMENT',$name);
      out(['dept_id'=>(int)db()->lastInsertId()],201);
    }
    if($method==='PUT' && $id) {
@@ -378,6 +381,9 @@ if($resource==='auth' && $method==='POST' && ($parts[1]??'')==='login') {
      if($name==='')out(['error'=>'Department name is required'],422);
      $s=db()->prepare('SELECT 1 FROM colleges WHERE college_id=?');$s->execute([$collegeId]);
      if(!$s->fetchColumn())out(['error'=>'College not found'],404);
+     $s=db()->prepare('SELECT college_id FROM departments WHERE dept_id=?');$s->execute([$id]);$currentCollege=$s->fetchColumn();
+     if($currentCollege===false)out(['error'=>'Department not found'],404);
+     if((int)$currentCollege!==$collegeId){$s=db()->prepare('SELECT 1 FROM employees WHERE dept_id=? LIMIT 1');$s->execute([$id]);if($s->fetchColumn())out(['error'=>'Reassign employees before moving this department to another college'],409);}
      $s=db()->prepare('UPDATE departments SET name=?,college_id=? WHERE dept_id=?');
      $s->execute([$name,$collegeId,$id]);
      if(!$s->rowCount()){$s=db()->prepare('SELECT 1 FROM departments WHERE dept_id=?');$s->execute([$id]);if(!$s->fetchColumn())out(['error'=>'Department not found'],404);}

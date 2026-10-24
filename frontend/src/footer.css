@@ -17,6 +17,18 @@
   gap: 5px;
 }
 
+.contact-footer__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.contact-footer__identity-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
 .contact-footer__identity strong {
   color: #18263e;
   font-size: 14px;
