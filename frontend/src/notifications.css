@@ -1,0 +1,123 @@
+.notification-item__open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.notification-item__open:focus-visible {
+  outline: 2px solid #167d5a;
+  outline-offset: 3px;
+}
+
+.notification-item__open strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #1c2940;
+  font-size: 12px;
+}
+
+.notification-delete {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  margin-top: 8px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #f0d7d9;
+  border-radius: 6px;
+  background: #fff;
+  color: #a63d48;
+}
+
+.notification-delete:hover {
+  background: #fff2f3;
+}
+
+.notification-delete:focus-visible {
+  outline: 2px solid #a63d48;
+  outline-offset: 2px;
+}
+
+.notification-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(16 30 54 / 55%);
+}
+
+.notification-modal {
+  width: min(560px, 100%);
+  max-height: min(80vh, 720px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid #e6ebf1;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(16 30 54 / 25%);
+}
+
+.notification-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.notification-modal__header h3 {
+  margin: 0;
+  color: #1c2940;
+  font-size: 18px;
+}
+
+.notification-modal__message {
+  margin: 18px 0;
+  color: #526176;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.notification-modal__details {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.notification-detail {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(0, 1.3fr);
+  gap: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #edf1f5;
+}
+
+.notification-detail dt {
+  color: #77869a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.notification-detail dd {
+  margin: 0;
+  color: #293950;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 520px) {
+  .notification-modal {
+    padding: 18px;
+  }
+
+  .notification-detail {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

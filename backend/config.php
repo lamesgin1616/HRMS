@@ -4,6 +4,15 @@ const DB_HOST = '127.0.0.1';
 const DB_NAME = 'mau_hrms';
 const DB_USER = 'root';
 const DB_PASS = ''; // Change this for your environment.
+const MAIL_FROM_EMAIL = ''; // Set to an address accepted by the configured PHP mail transport.
+const MAIL_SMTP_HOST = ''; // Optional SMTP host; configure to send with PHPMailer.
+const MAIL_SMTP_PORT = 587;
+const MAIL_SMTP_USERNAME = '';
+const MAIL_SMTP_PASSWORD = '';
+const MAIL_SMTP_ENCRYPTION = 'tls'; // 'tls', 'ssl', or ''.
+const SMS_GATEWAY_URL = ''; // Optional JSON API endpoint accepting from, to, and message.
+const SMS_GATEWAY_TOKEN = ''; // Optional bearer token for the SMS gateway.
+const SMS_SENDER_ID = 'MAU HRMS';
 const APP_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
@@ -22,19 +31,9 @@ function username_policy_error(string $username): ?string {
 }
 
 function password_policy_error(string $password): ?string {
-    if (strlen($password) < 6) return 'passwordTooShort';
-    if (
-        !preg_match('/[A-Z]/', $password)
-        || !preg_match('/[a-z]/', $password)
-        || !preg_match('/[0-9]/', $password)
-        || !preg_match('/[^A-Za-z0-9]/', $password)
-    ) {
-        return 'weakPassword';
-    }
+    $length = preg_match_all('/./us', $password);
+    if ($length === false || $length < 7) return 'passwordTooShort';
     if (strlen($password) > 72) return 'passwordTooLong';
-    if (in_array(strtolower($password), ['password123!', 'welcome123!', 'qwerty123!', 'admin123!', 'letmein123!', 'changeme123!', 'iloveyou123!'], true)) {
-        return 'commonPassword';
-    }
     return null;
 }
 

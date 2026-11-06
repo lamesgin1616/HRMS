@@ -1,25 +1,18 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: '127.0.0.1',
     port: 5173,
-    strictPort: true,
-    hmr: {
-      host: '127.0.0.1',
-      protocol: 'ws',
-      clientPort: 5173,
-    },
     proxy: {
+      // Route API endpoints through api.php using PHP's PATH_INFO support.
       '/backend': {
         target: 'http://127.0.0.1:8000',
-        rewrite: (path) => path.replace(/^\/backend/, '/backend/api.php'),
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'));
-        },
-      },
-    },
-  },
-});
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/backend/, '/api.php')
+      }
+    }
+  }
+})

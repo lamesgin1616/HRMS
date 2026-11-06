@@ -13,8 +13,8 @@ $username = trim($argv[1] ?? 'admin');
 $password = $argv[2] ?? '';
 
 if (username_policy_error($username) !== null || password_policy_error($password) !== null) {
-    fwrite(STDERR, "Usage: php create_admin.php <username> <strong-password>\n");
-    fwrite(STDERR, "Username must be 4-80 characters. Password must be 6-72 characters and include uppercase and lowercase letters, a number, and a symbol; common passwords are not allowed.\n");
+    fwrite(STDERR, "Usage: php create_admin.php <username> <password>\n");
+    fwrite(STDERR, "Username must be 4-80 characters. Password must be at least 7 characters and no more than 72 bytes; any characters are allowed.\n");
     exit(1);
 }
 
